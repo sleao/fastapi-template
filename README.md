@@ -82,8 +82,20 @@ The domain layer contains pure business objects. No FastAPI, no HTTP.
 from sqlalchemy.orm import DeclarativeBase
 
 class Base(DeclarativeBase):
-    pass
+    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid7)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
+    )
+    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    type_annotation_map = {dict[str, Any]: JSONB}
 ```
+
+Soft delete is a convention: always add `deleted_at` and filter with `.where(Model.deleted_at.is_(None))`.
 
 **ORM Model** — uses SQLAlchemy 2.0 `Mapped[]` typed annotations:
 
@@ -92,13 +104,9 @@ class Base(DeclarativeBase):
 class Item(Base):
     __tablename__ = "item"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[ItemStatus] = mapped_column(Enum(ItemStatus), nullable=False)
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 ```
-
-Soft delete is a convention: always add `deleted_at` and filter with `.where(Model.deleted_at.is_(None))`.
 
 **Domain schemas** — plain `BaseModel`, no camelCase. These travel between the repository and the controller:
 
@@ -279,10 +287,10 @@ async def company_data(user: UserIdentity = require_own_company()):
 
 Two `BaseSettings` classes, both using `@lru_cache` for singleton behavior:
 
-| Class | File | Env vars |
-|---|---|---|
-| `Config` | `configuration.py` | `ENVIRONMENT`, `APP_VERSION`, `HOME_MESSAGE` |
-| `DatabaseConfig` | `database.py` | `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD` |
+| Class            | File               | Env vars                                                      |
+| ---------------- | ------------------ | ------------------------------------------------------------- |
+| `Config`         | `configuration.py` | `ENVIRONMENT`, `APP_VERSION`, `HOME_MESSAGE`                  |
+| `DatabaseConfig` | `database.py`      | `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD` |
 
 Copy `.env.tpl` → `.env` and fill in values before running locally.
 
@@ -301,7 +309,7 @@ your_domain/
 └── repository.py  # ABC port + SqlAlchemy adapter
 ```
 
-2. **Create the controller package**: `src/api/rest/controllers/your_domain/`
+1. **Create the controller package**: `src/api/rest/controllers/your_domain/`
 
 ```
 your_domain/
@@ -311,7 +319,7 @@ your_domain/
 └── router.py         # APIRouter with prefix and routes
 ```
 
-3. **Register the router** in `rest/controllers/__init__.py` and `rest/__init__.py`:
+1. **Register the router** in `rest/controllers/__init__.py` and `rest/__init__.py`:
 
 ```python
 # rest/controllers/__init__.py
@@ -321,7 +329,7 @@ from api.rest.controllers.your_domain.router import router as YourDomainRouter
 app.include_router(YourDomainRouter)
 ```
 
-4. **Add tests** under `tests/rest/controllers/your_domain/test_router.py`, using `dependency_overrides` to inject a mock repository.
+1. **Add tests** under `tests/rest/controllers/your_domain/test_router.py`, using `dependency_overrides` to inject a mock repository.
 
 ---
 
