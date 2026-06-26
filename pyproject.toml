@@ -1,18 +1,19 @@
 [project]
 name = "api"
-version = "0.1.1"
-description = "FastAPI Domain Template"
+version = "0.1.0"
+description = "Modular-monolith FastAPI bootstrap (cosmic-python layout)"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-  "asyncpg>=0.30.0",
-  "httpx>=0.28.1",
+  "fastapi[standard]>=0.115.0",
   "pydantic>=2.12.0",
   "pydantic-settings>=2.12.0",
   "sqlalchemy[asyncio]>=2.0.0",
+  "asyncpg>=0.30.0",
+  "alembic>=1.14.0",
+  "httpx>=0.28.1",
   "uvicorn>=0.40.0",
   "uvloop>=0.22.0",
-  "fastapi[standard]>=0.115.0",
 ]
 
 [dependency-groups]
@@ -20,19 +21,102 @@ dev = [
   "ruff>=0.15.0",
   "pytest>=8.0.0",
   "pytest-asyncio>=0.25.0",
-  "httpx>=0.28.1",
   "pytest-cov>=7.0.0",
+  "import-linter>=2.0",
+  "aiosqlite>=0.20.0",   # in-memory DB for adapter tests — no Docker required
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.coverage.run]
 relative_files = true
+source = ["src/api"]
 
 [tool.ruff]
-exclude = [".venv"]
+src = ["src"]
+exclude = [".venv", "migrations"]
+line-length = 100
 
-[lint]
+[tool.ruff.lint]
+# PLW2901: redefining a loop variable is idiomatic here.
 ignore = ["PLW2901"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# import-linter — the architecture contracts. `just lint-imports` runs these;
+# `tests/architecture/test_lint_imports_runs.py` makes a violation a test
+# failure too. See docs/architecture.md for the rationale behind each contract.
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.importlinter]
+root_packages = ["api"]
+include_external_packages = true
+
+# Contract 1: business modules are independent except via the public façade.
+[[tool.importlinter.contracts]]
+name = "Modules are independent except for the public façade"
+type = "independence"
+modules = [
+  "api.catalog",
+  "api.ordering",
+]
+ignore_imports = [
+  # ── Public façade: the only sanctioned cross-module surface ──
+  "api.** -> api.*.service_layer.queries",
+  "api.** -> api.*.service_layer.commands",
+  "api.** -> api.*.domain.events",
+  "api.** -> api.*.domain.commands",
+  "api.** -> api.*.domain.errors",
+
+  # ── System wiring (composition root + shared kernel) ──
+  # The UoW builds every module's repositories; it imports them lazily inside
+  # `_enter` to avoid a load-time cycle, but import-linter sees the edge.
+  "api.shared.infrastructure.unit_of_work -> api.*.adapters.repositories",
+  # `register_all_orm_mappings()` imports each module's `adapters/orm.py` so
+  # the imperative mappings register against the shared metadata.
+  "api.shared.infrastructure.database -> api.*.adapters.orm",
+  # The composition root mounts routers and wires event handlers.
+  "api.entrypoints.main -> api.*.entrypoints.api",
+  "api.entrypoints.main -> api.*.entrypoints.event_handlers",
+  # Root settings aggregation imports each module's settings.
+  "api.entrypoints.settings -> api.*.settings",
+]
+unmatched_ignore_imports_alerting = "warn"
+
+# Contract 2: cosmic-python layers within each module.
+[[tool.importlinter.contracts]]
+name = "Cosmic Python layers within each module"
+type = "layers"
+layers = [
+  "entrypoints",
+  "service_layer",
+  "adapters",
+  "domain",
+  "settings",
+]
+containers = [
+  "api.catalog",
+  "api.ordering",
+]
+exhaustive = true
+
+# Contract 3: the domain layer is pure Python.
+[[tool.importlinter.contracts]]
+name = "Domain is pure Python"
+type = "forbidden"
+source_modules = [
+  "api.catalog.domain",
+  "api.ordering.domain",
+]
+forbidden_modules = ["fastapi", "sqlalchemy", "pydantic", "starlette"]
+
+# Contract 4: the service layer is framework-free.
+[[tool.importlinter.contracts]]
+name = "Service layer is framework-free"
+type = "forbidden"
+source_modules = [
+  "api.catalog.service_layer",
+  "api.ordering.service_layer",
+]
+forbidden_modules = ["fastapi", "starlette"]

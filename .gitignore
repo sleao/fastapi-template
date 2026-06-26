@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+
+# Virtualenv / uv
+.venv/
+
+# Env files (keep .env.tpl, ignore real .env)
+.env
+.env.*
+!.env.tpl
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# OS / editor
+.DS_Store
+*.swp
